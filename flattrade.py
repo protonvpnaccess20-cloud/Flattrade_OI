@@ -93,10 +93,16 @@ async def exchange_code(user_id: str, api_key: str, api_secret: str, request_cod
 async def _post(path: str, user_id: str, token: str, payload: dict) -> dict:
     body = dict(payload)
     body.setdefault("uid", user_id)
+    # The PiConnect server parses jData as RAW JSON in the body, exactly as
+    # the docs' curl examples send it ('jData={...}&jKey=...'). Form-encoding
+    # the JSON (httpx data={...}) percent-encodes the braces and the server
+    # refuses it: "Invalid Input : jData is not valid json object" — seen
+    # live on the first real login, 21 Oct 2026. Send the string body raw.
+    content = f"jData={json.dumps(body)}&jKey={token}"
     async with _client() as client:
         resp = await client.post(
             f"{BASE}/{path}",
-            data={"jData": json.dumps(body), "jKey": token},
+            content=content,
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
     try:

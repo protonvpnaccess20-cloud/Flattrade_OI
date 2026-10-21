@@ -1,4 +1,9 @@
-FLATTRADE OI APP — DEPLOY CHECKLIST (v1.2 — official-docs login flow)
+FLATTRADE OI APP — DEPLOY CHECKLIST (v1.3 — raw jData body)
+
+V1.3 FIX (first real login, 21 Oct 18:26 IST — login + tunnel + Turso all
+PROVEN live): the data calls were refused with "jData is not valid json
+object" because the JSON was form-encoded. _post now sends the body raw,
+exactly like the docs' curl examples: jData={...}&jKey=...
 Data only: this app reads quotes + the option chain. It can never place an order.
 
 V1.2 FIX (from Flattrade's official docs, pi.flattrade.in/docs — checked
