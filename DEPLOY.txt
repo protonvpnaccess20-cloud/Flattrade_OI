@@ -1,5 +1,14 @@
-FLATTRADE OI APP — DEPLOY CHECKLIST (v1.1 — static-IP tunnel)
+FLATTRADE OI APP — DEPLOY CHECKLIST (v1.2 — official-docs login flow)
 Data only: this app reads quotes + the option chain. It can never place an order.
+
+V1.2 FIX (from Flattrade's official docs, pi.flattrade.in/docs — checked
+21 Oct after a 404 at login): v1.0/v1.1 pointed the login at an old
+piconnect address that no longer exists (hence the 404). The current flow:
+login page = https://auth.flattrade.in/?app_key=<api key>; the code returns
+ONLY to the Redirect URL registered in Wall; the token exchange is
+POST https://authapi.flattrade.in/trade/apitoken with
+api_secret = SHA-256(api key + request_code + api secret); data endpoints
+live under https://piconnect.flattrade.in/PiConnectAPI. All corrected.
 
 STATIC-IP TUNNEL (v1.1, at Viswa's direction): Flattrade only accepts API
 traffic from the registered static IP. Set FT_PROXY_URL (your tunnel URL,
@@ -16,9 +25,10 @@ FILES TO UPLOAD (all of them, one GitHub commit — same rule as Rollix):
    - Create a new repo (e.g. flattrade-oi) and upload all the files above to the repo root.
 
 2. FLATTRADE API APP — redirect URL (do this before the first login)
-   - In the Flattrade API portal, your API app has a Redirect URL setting.
-   - After Render gives you the app URL (step 3), set the redirect URL to:
+   - In Wall (wall.flattrade.in) > Pi > your API key, the Redirect URL must be:
          https://<your-render-app>.onrender.com/callback
+   - This is not optional and cannot come from the app: the auth portal sends
+     the login code ONLY to the registered URL (docs, Login Flow step 3).
    - The API key/secret of that same app are what go into the env vars below.
 
 3. RENDER
@@ -39,7 +49,8 @@ FILES TO UPLOAD (all of them, one GitHub commit — same rule as Rollix):
    - Open the app URL and tap "check egress IP" on the status page: the IP shown
      must be your registered static IP. If it is not, do NOT log in — fix the
      tunnel first, otherwise Flattrade sees a foreign IP.
-   - Then tap "Login with Flattrade", sign in on Flattrade's own page.
+   - Then tap "Login with Flattrade": you land on auth.flattrade.in — sign in
+     with your client ID (UCC) + password + PAN/DOB.
    - You land back on the status page: "Logged in today" + the first OI snapshot appears.
    - Keep the tunnel running all session — every chain poll uses it too.
 

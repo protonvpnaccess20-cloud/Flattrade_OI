@@ -2,13 +2,15 @@
 Flattrade (Noren / PiConnectTP) client — DATA ONLY. This app never places,
 modifies or cancels an order; it only reads quotes and the option chain.
 
-Morning login flow (the user logs in on Flattrade's own page):
-  1. GET /login on this app redirects the browser to LOGIN_URL with the
-     app's API key. The user signs in on Flattrade's page (password + TOTP
-     stay on Flattrade — this app never sees them).
-  2. Flattrade redirects back to the redirect URL registered for the API app
-     (this app's /callback) with ?request_code=...
-  3. This app exchanges the code at GenWebToken for the day session token.
+Morning login flow (official docs, pi.flattrade.in/docs — Login Flow):
+  1. GET /login on this app redirects the browser to
+     https://auth.flattrade.in/?app_key=<api key>. The user signs in there
+     with UCC + password + PAN/DOB (credentials stay on Flattrade).
+  2. Flattrade redirects to the Redirect URL registered in Wall for the
+     API key (this app's /callback) with ?request_code=...
+  3. This app exchanges the code at https://authapi.flattrade.in/trade/apitoken
+     with api_secret = SHA-256(api key + request_code + api secret). The docs
+     state the token is returned only from the registered static IP.
 
 Every endpoint and payload lives in THIS file on purpose: if Flattrade's
 first live reply shows a different expectation, the raw reply is surfaced
@@ -21,8 +23,9 @@ import os
 
 import httpx
 
-BASE = os.environ.get("FT_BASE_URL", "https://piconnect.flattrade.in/PiConnectTP")
-LOGIN_URL = os.environ.get("FT_LOGIN_URL", "https://piconnect.flattrade.in/login")
+BASE = os.environ.get("FT_BASE_URL", "https://piconnect.flattrade.in/PiConnectAPI")
+LOGIN_URL = os.environ.get("FT_LOGIN_URL", "https://auth.flattrade.in/")
+AUTH_URL = os.environ.get("FT_AUTH_URL", "https://authapi.flattrade.in/trade/apitoken")
 TIMEOUT = httpx.Timeout(20.0)
 
 # Flattrade only accepts API traffic from the account's registered static
@@ -53,52 +56,38 @@ class FlattradeError(Exception):
     """Carries the raw reply text so the status page can show it verbatim."""
 
 
-def login_url(api_key: str, return_uri: str) -> str:
-    from urllib.parse import quote
-
-    return f"{LOGIN_URL}?api_key={api_key}&return_uri={quote(return_uri, safe='')}"
+def login_url(api_key: str) -> str:
+    # Official docs: the authorization URL carries ONLY the app_key. After
+    # login, Flattrade redirects to the Redirect URL registered in Wall for
+    # this API key — it does not accept a return address from the link, so
+    # that Wall registration must point at this app's /callback.
+    return f"{LOGIN_URL}?app_key={api_key}"
 
 
 async def exchange_code(user_id: str, api_key: str, api_secret: str, request_code: str) -> dict:
     """Exchange the one-time request_code for the day session token.
 
+    Official docs flow: POST JSON {"api_key", "request_code",
+    "api_secret": SHA-256(api_key + request_code + api_secret)} to
+    AUTH_URL (https://authapi.flattrade.in/trade/apitoken); the reply is
+    {"token", "client", "status": "Ok", "emsg"}. The docs state the token
+    is returned ONLY when this call originates from the registered static
+    IP — the FT_PROXY_URL tunnel provides exactly that.
     Returns {"token": ..., "raw": <full reply dict>}.
     Raises FlattradeError with the raw reply when the exchange is refused.
     """
-    payload = {"uid": user_id, "request_code": request_code}
+    hashed = hashlib.sha256(f"{api_key}{request_code}{api_secret}".encode()).hexdigest()
+    payload = {"api_key": api_key, "request_code": request_code, "api_secret": hashed}
     async with _client() as client:
-        resp = await client.post(
-            f"{BASE}/GenWebToken",
-            data={"jData": json.dumps(payload)},
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
+        resp = await client.post(AUTH_URL, json=payload)
     try:
         body = resp.json()
     except Exception:
-        raise FlattradeError(f"GenWebToken HTTP {resp.status_code}: {resp.text[:400]}")
+        raise FlattradeError(f"apitoken HTTP {resp.status_code}: {resp.text[:400]}")
     token = body.get("token") or body.get("susertoken")
-    if body.get("stat") == "Ok" and token:
+    if token:
         return {"token": token, "raw": body}
-    # Some app registrations expect a checksum on the exchange; retry once
-    # with it when a secret is configured.
-    if api_secret:
-        checksum = hashlib.sha256(f"{api_key}{request_code}{api_secret}".encode()).hexdigest()
-        payload2 = {"uid": user_id, "request_code": request_code, "checksum": checksum}
-        async with _client() as client:
-            resp2 = await client.post(
-                f"{BASE}/GenWebToken",
-                data={"jData": json.dumps(payload2)},
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-            )
-        try:
-            body2 = resp2.json()
-        except Exception:
-            raise FlattradeError(f"GenWebToken HTTP {resp2.status_code}: {resp2.text[:400]}")
-        token2 = body2.get("token") or body2.get("susertoken")
-        if body2.get("stat") == "Ok" and token2:
-            return {"token": token2, "raw": body2}
-        raise FlattradeError(f"GenWebToken refused (checksum retry): {json.dumps(body2)[:400]}")
-    raise FlattradeError(f"GenWebToken refused: {json.dumps(body)[:400]}")
+    raise FlattradeError(f"apitoken refused: {json.dumps(body)[:400]}")
 
 
 async def _post(path: str, user_id: str, token: str, payload: dict) -> dict:

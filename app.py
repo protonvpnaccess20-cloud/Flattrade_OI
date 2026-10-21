@@ -228,7 +228,7 @@ async def login(request: Request):
         )
     if not FT_API_KEY:
         return HTMLResponse("<h3>FT_API_KEY is not set on the server yet.</h3>", status_code=500)
-    return RedirectResponse(flattrade.login_url(FT_API_KEY, f"{APP_BASE_URL}/callback"))
+    return RedirectResponse(flattrade.login_url(FT_API_KEY))
 
 
 @app.post("/unlock")
