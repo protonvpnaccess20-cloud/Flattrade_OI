@@ -231,6 +231,20 @@ async def login(request: Request):
     return RedirectResponse(flattrade.login_url(FT_API_KEY))
 
 
+@app.get("/logout")
+async def logout(request: Request):
+    """Clears today's stored Flattrade session so the next login starts from
+    a clean slate. (Re-login alone also replaces the session; this exists
+    because the user asked for an explicit logout.)"""
+    if APP_PASSCODE and request.cookies.get("oi_pass") != APP_PASSCODE:
+        return HTMLResponse(
+            "<h3>Flattrade OI App</h3><form method='post' action='/unlock'>"
+            "Passcode: <input type='password' name='pass'> <button type='submit'>Continue</button></form>"
+        )
+    oidb.delete_session(today_str())
+    return RedirectResponse("/")
+
+
 @app.post("/unlock")
 async def unlock(request: Request):
     form = await request.form()
@@ -296,7 +310,7 @@ async def home():
              ".err{background:#ffe9e9;padding:8px;white-space:pre-wrap}.ok{background:#e9f7e9;padding:8px}</style></head><body>"]
     parts.append("<h2>Flattrade OI App — data only</h2>")
     if sess:
-        parts.append(f"<div class='ok'>Logged in today at {html.escape(sess['updated_at'])} · storage: {oidb.storage_backend()}</div>")
+        parts.append(f"<div class='ok'>Logged in today at {html.escape(sess['updated_at'])} · storage: {oidb.storage_backend()} · <a href='/logout'>Log out (clear today's session)</a></div>")
     else:
         parts.append("<div class='err'>Not logged in today. <a href='/login'><b>Login with Flattrade</b></a></div>")
     login_err = oidb.get_state("error_login") or ""

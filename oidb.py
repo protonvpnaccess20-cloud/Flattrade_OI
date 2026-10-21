@@ -66,6 +66,12 @@ def get_session(day: str):
     return {"token": row[0], "updated_at": row[1]}
 
 
+def delete_session(day: str):
+    c = _connect()
+    c.execute("DELETE FROM ft_session WHERE day = ?", (day,))
+    c.commit()
+
+
 def add_snapshot(day: str, ts: str, symbol: str, payload: dict):
     c = _connect()
     c.execute(

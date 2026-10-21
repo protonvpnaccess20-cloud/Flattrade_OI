@@ -1,4 +1,7 @@
-FLATTRADE OI APP — DEPLOY CHECKLIST (v1.3 — raw jData body)
+FLATTRADE OI APP — DEPLOY CHECKLIST (v1.4 — logout option)
+
+V1.4 (21 Oct, at Viswa's ask): a "Log out (clear today's session)" link in
+the logged-in banner deletes the stored day session, for a clean re-login.
 
 V1.3 FIX (first real login, 21 Oct 18:26 IST — login + tunnel + Turso all
 PROVEN live): the data calls were refused with "jData is not valid json
