@@ -1,4 +1,11 @@
-FLATTRADE OI APP — DEPLOY CHECKLIST (v1.4 — logout option)
+FLATTRADE OI APP — DEPLOY CHECKLIST (v1.5 — per-contract OI + Sensex debug)
+
+V1.5 (21 Oct night, after the first fully live snapshot): the live chain
+reply carries strikes only (OI read 0.0 everywhere), so each contract's OI
+and LTP now come from its own GetQuotes reply; the chain window is 12
+strikes per side so every stored strike has real OI. Also adds
+/api/debug/search/<SYMBOL> (raw contract names) to fix the SENSEX futures
+symbol format from evidence.
 
 V1.4 (21 Oct, at Viswa's ask): a "Log out (clear today's session)" link in
 the logged-in banner deletes the stored day session, for a clean re-login.

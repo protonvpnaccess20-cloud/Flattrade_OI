@@ -30,7 +30,10 @@ def normalise_chain(values: list) -> list:
         oi = v.get("oi", None)
         if oi is None:
             oi = v.get("openinterest", v.get("oiQty", 0))
-        rows.append({"strike": strike, "optt": optt, "lp": _num(v.get("lp")), "oi": _num(oi)})
+        # Keep the contract token + tsym: the live chain reply carries no OI,
+        # so app.py enriches each row from GetQuotes, which needs the token.
+        rows.append({"strike": strike, "optt": optt, "lp": _num(v.get("lp")), "oi": _num(oi),
+                     "token": str(v.get("token") or ""), "tsym": v.get("tsym") or ""})
     return rows
 
 

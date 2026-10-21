@@ -115,6 +115,40 @@ async def _resolve_future(symbol: str, cfg: dict, token: str):
     return best  # (tsym, expiry date)
 
 
+async def _enrich_oi(cfg: dict, token: str, rows: list) -> list:
+    """The live GetOptionChain reply carries strikes only — no OI, no LTP
+    (proven live 21 Oct 23:02 IST: every strike read OI 0.0). OI lives on
+    the per-contract GetQuotes reply, so fetch it per contract token,
+    a few at a time. If NO quote carries an OI field, fail loudly with a
+    sample of the raw reply — that sample is the fix evidence."""
+    sem = asyncio.Semaphore(8)
+    sample = {}
+
+    async def one(row):
+        exch_token = row.get("token")
+        if not exch_token:
+            return
+        async with sem:
+            try:
+                q = await flattrade.get_quotes(FT_USER_ID, token, cfg["chain_exch"], exch_token)
+            except Exception:
+                return
+        if q and not sample:
+            sample.update(q)
+        oi = q.get("oi", q.get("openInterest", q.get("openinterest")))
+        if oi is not None:
+            row["oi"] = compute._num(oi)
+        if q.get("lp"):
+            row["lp"] = compute._num(q.get("lp"))
+
+    await asyncio.gather(*(one(r) for r in rows))
+    if rows and not any(r["oi"] > 0 for r in rows):
+        raise flattrade.FlattradeError(
+            f"Quotes carried no OI for {len(rows)} contracts; sample quote reply: {json.dumps(sample)[:300]}"
+        )
+    return rows
+
+
 async def fetch_symbol(symbol: str) -> dict:
     """Fetch one chain snapshot, compute the view, store it. Returns status dict."""
     cfg = SYMBOLS[symbol]
@@ -140,10 +174,14 @@ async def fetch_symbol(symbol: str) -> dict:
             if spot <= 0:
                 raise flattrade.FlattradeError(f"Could not read {symbol} spot from Flattrade quotes")
             atm = round(spot / cfg["step"]) * cfg["step"]
-            raw = await flattrade.get_option_chain(FT_USER_ID, token, cfg["chain_exch"], fut_tsym, atm, 25)
+            # cnt=12 strikes per side: every stored strike gets a real OI
+            # from its own quote, so the window stays honest (±12 strikes —
+            # NIFTY ±600 pts, SENSEX ±1,200 pts around the money).
+            raw = await flattrade.get_option_chain(FT_USER_ID, token, cfg["chain_exch"], fut_tsym, atm, 12)
             rows = compute.normalise_chain(raw)
             if not rows:
                 raise flattrade.FlattradeError(f"Option chain reply had no usable rows ({len(raw)} raw rows)")
+            rows = await _enrich_oi(cfg, token, rows)
 
         snaps = oidb.last_snapshots(today_str(), symbol, 1)
         prev_rows = snaps[0]["payload"].get("rows") if snaps else None
@@ -276,6 +314,25 @@ async def callback(request: Request):
             "<p>This exact reply is what to fix from — send it to Muse.</p><p><a href='/'>Back</a></p>",
             status_code=502,
         )
+
+
+@app.get("/api/debug/search/{symbol}")
+async def debug_search(symbol: str):
+    """Raw SearchScrip rows for a symbol root — contract tsyms are public
+    market data (no secrets), used to fix exchange-specific symbol formats
+    (the BSE futures tsym did not match the NSE-shaped parser)."""
+    symbol = symbol.upper()
+    if symbol not in SYMBOLS:
+        return JSONResponse({"error": "unknown symbol"}, status_code=404)
+    sess = _session()
+    if not sess:
+        return {"symbol": symbol, "error": "no session"}
+    cfg = SYMBOLS[symbol]
+    try:
+        values = await flattrade.search_scrip(FT_USER_ID, sess["token"], cfg["search_exch"], symbol)
+        return {"symbol": symbol, "count": len(values), "rows": values[:40]}
+    except Exception as exc:
+        return {"symbol": symbol, "error": str(exc)}
 
 
 @app.get("/api/oi")
