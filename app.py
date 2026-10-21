@@ -130,21 +130,33 @@ def _is_future(v: dict, symbol: str) -> bool:
 async def _resolve_future(symbol: str, cfg: dict, token: str):
     values = await flattrade.search_scrip(FT_USER_ID, token, cfg["search_exch"], symbol)
     today = now_ist().date()
-    best = None
+    best = None  # (tier, expiry, tsym)
     for v in values:
         tsym = v.get("tsym", "")
         if tsym.startswith(f"{symbol}50"):
             continue  # the mini contract (SENSEX50) — never the main future
+        # The root must be EXACTLY the symbol: NIFTYFPI27OCT26F is a
+        # different contract family that shares the NIFTY prefix — it won
+        # the anchor on the first v1.6 fetch (23:23 IST, 21 Oct) and its
+        # quotes carry no OI. A letter right after the root = another root.
+        if not tsym.startswith(symbol) or tsym[len(symbol):len(symbol) + 1].isalpha():
+            continue
         if not _is_future(v, symbol):
             continue
         exp = _row_expiry(v, symbol)
         if exp is None or exp < today:
             continue
-        if best is None or exp < best[1]:
-            best = (tsym, exp)
+        # Preference tier: rows whose symname is the symbol itself (or that
+        # carry no symname) beat side families. NOT a hard filter — the
+        # SENSEX main future's symname is BSXFUT, not SENSEX.
+        symname = (v.get("symname") or "").strip()
+        tier = 0 if (not symname or symname == symbol) else 1
+        cand = (tier, exp, tsym)
+        if best is None or cand < best:
+            best = cand
     if best is None:
         raise flattrade.FlattradeError(f"No live {symbol} future found in SearchScrip reply ({len(values)} rows)")
-    return best  # (tsym, expiry date)
+    return best[2], best[1]  # (tsym, expiry date)
 
 
 async def _enrich_oi(cfg: dict, token: str, rows: list) -> list:

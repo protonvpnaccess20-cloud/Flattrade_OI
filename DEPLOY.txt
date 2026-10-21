@@ -1,4 +1,11 @@
-FLATTRADE OI APP — DEPLOY CHECKLIST (v1.6 — BSE futures format)
+FLATTRADE OI APP — DEPLOY CHECKLIST (v1.7 — exact-root future anchor)
+
+V1.7 (21 Oct night): the first v1.6 NIFTY fetch anchored on NIFTYFPI, a
+side contract family sharing the NIFTY prefix, whose quotes carry no OI.
+The resolver now requires the exact contract root (a letter right after
+the root means another family) and prefers rows whose symname is the
+symbol itself. SENSEX went fully live in the same run — real OI,
+PCR 0.959 — proving the quote enrichment end to end.
 
 V1.6 (21 Oct night, from the live SENSEX debug reply): BSE futures are
 named SENSEX26OCTFUT (YY+MMM+FUT, day in the exd field), not the NSE
