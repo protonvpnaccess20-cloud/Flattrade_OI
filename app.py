@@ -99,13 +99,45 @@ def _fut_expiry(tsym: str, symbol: str):
         return None
 
 
+def _row_expiry(v: dict, symbol: str):
+    """Expiry for a SearchScrip row. The live reply carries an explicit
+    `exd` field ("29-OCT-2026") — prefer it; fall back to parsing the tsym
+    (the NSE shape NIFTY27OCT26F)."""
+    exd = (v.get("exd") or "").strip()
+    parts = exd.replace(",", "").split("-")
+    if len(parts) == 3:
+        mon = _MONTHS.get(parts[1].strip().upper()[:3])
+        try:
+            if mon:
+                return datetime(int(parts[2]), mon, int(parts[0])).date()
+        except ValueError:
+            pass
+    return _fut_expiry(v.get("tsym", ""), symbol)
+
+
+def _is_future(v: dict, symbol: str) -> bool:
+    tsym = v.get("tsym", "") or ""
+    inst = (v.get("instname") or "").upper()
+    if inst.startswith("FUT"):
+        return True
+    if _fut_expiry(tsym, symbol):
+        return True  # NSE shape: SYMBOL + DDMMMYY + F
+    # BSE shape (from the live debug reply): SYMBOL + YY + MMM + FUT,
+    # e.g. SENSEX26OCTFUT — the expiry day comes from the exd field.
+    return bool(re.match(rf"^{symbol}\d{{2}}[A-Z]{{3}}FUT$", tsym))
+
+
 async def _resolve_future(symbol: str, cfg: dict, token: str):
     values = await flattrade.search_scrip(FT_USER_ID, token, cfg["search_exch"], symbol)
     today = now_ist().date()
     best = None
     for v in values:
         tsym = v.get("tsym", "")
-        exp = _fut_expiry(tsym, symbol)
+        if tsym.startswith(f"{symbol}50"):
+            continue  # the mini contract (SENSEX50) — never the main future
+        if not _is_future(v, symbol):
+            continue
+        exp = _row_expiry(v, symbol)
         if exp is None or exp < today:
             continue
         if best is None or exp < best[1]:
@@ -188,7 +220,11 @@ async def fetch_symbol(symbol: str) -> dict:
         base = oidb.day_baseline(today_str(), symbol)
         base_rows = base["payload"].get("rows") if base else None
         view = compute.build_view(rows, spot, prev_rows, base_rows)
-        payload = {"rows": rows, "view": view, "expiry": expiry, "fetched_at": now_ist().isoformat()}
+        # anchor + a sample contract tsym: shows WHICH expiry the chain
+        # really is (the BSE future is monthly while options are weekly).
+        anchor = fut_tsym if not STUB else "STUB"
+        payload = {"rows": rows, "view": view, "expiry": expiry, "fetched_at": now_ist().isoformat(),
+                   "anchor": anchor, "sample_tsym": rows[0].get("tsym") if rows else None}
         oidb.add_snapshot(today_str(), now_ist().isoformat(), symbol, payload)
         oidb.set_state(f"error_{symbol}", "")
         return {"symbol": symbol, "status": "ok", "asOf": payload["fetched_at"], "expiry": expiry, **view}
@@ -202,7 +238,8 @@ def _stored_view(symbol: str):
     if not snaps:
         return None
     p = snaps[0]["payload"]
-    return {"symbol": symbol, "status": "ok", "asOf": p.get("fetched_at"), "expiry": p.get("expiry"), **p.get("view", {})}
+    return {"symbol": symbol, "status": "ok", "asOf": p.get("fetched_at"), "expiry": p.get("expiry"),
+            "anchor_tsym": p.get("anchor"), "sample_tsym": p.get("sample_tsym"), **p.get("view", {})}
 
 
 def _is_stale(symbol: str) -> bool:

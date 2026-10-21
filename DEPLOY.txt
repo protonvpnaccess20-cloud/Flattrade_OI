@@ -1,4 +1,10 @@
-FLATTRADE OI APP — DEPLOY CHECKLIST (v1.5 — per-contract OI + Sensex debug)
+FLATTRADE OI APP — DEPLOY CHECKLIST (v1.6 — BSE futures format)
+
+V1.6 (21 Oct night, from the live SENSEX debug reply): BSE futures are
+named SENSEX26OCTFUT (YY+MMM+FUT, day in the exd field), not the NSE
+shape. The resolver now prefers the exd field, accepts both shapes, and
+skips the SENSEX50 mini. Snapshots also record the anchor future and a
+sample contract tsym so the chain expiry is visible.
 
 V1.5 (21 Oct night, after the first fully live snapshot): the live chain
 reply carries strikes only (OI read 0.0 everywhere), so each contract's OI
