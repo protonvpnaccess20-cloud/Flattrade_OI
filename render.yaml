@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: flattrade-oi
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.0
+      - key: FT_API_KEY
+        sync: false
+      - key: FT_API_SECRET
+        sync: false
+      - key: FT_USER_ID
+        sync: false
+      - key: FT_PROXY_URL
+        sync: false
+      - key: APP_BASE_URL
+        sync: false
+      - key: APP_PASSCODE
+        sync: false
+      - key: TURSO_URL
+        sync: false
+      - key: TURSO_TOKEN
+        sync: false
+      - key: POLL_SECONDS
+        value: "180"

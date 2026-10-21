@@ -1,0 +1,62 @@
+FLATTRADE OI APP — DEPLOY CHECKLIST (v1.1 — static-IP tunnel)
+Data only: this app reads quotes + the option chain. It can never place an order.
+
+STATIC-IP TUNNEL (v1.1, at Viswa's direction): Flattrade only accepts API
+traffic from the registered static IP. Set FT_PROXY_URL (your tunnel URL,
+same as your existing setup) in the Render env vars and EVERY call — the
+morning login exchange and all chain polls — egresses through the tunnel,
+so Flattrade sees the registered IP even though the app runs on Render.
+There is no silent fallback: tunnel set but down = loud error on the page.
+
+FILES TO UPLOAD (all of them, one GitHub commit — same rule as Rollix):
+  app.py  flattrade.py  compute.py  oidb.py  requirements.txt  render.yaml
+  (.env.example and DEPLOY.txt are just documentation; uploading them is harmless.)
+
+1. GITHUB
+   - Create a new repo (e.g. flattrade-oi) and upload all the files above to the repo root.
+
+2. FLATTRADE API APP — redirect URL (do this before the first login)
+   - In the Flattrade API portal, your API app has a Redirect URL setting.
+   - After Render gives you the app URL (step 3), set the redirect URL to:
+         https://<your-render-app>.onrender.com/callback
+   - The API key/secret of that same app are what go into the env vars below.
+
+3. RENDER
+   - New > Web Service > connect the repo. Render reads render.yaml automatically.
+   - Plan: Free. If it asks: build = pip install -r requirements.txt,
+     start = uvicorn app:app --host 0.0.0.0 --port $PORT
+   - Environment variables (values from .env.example — secrets go HERE, never in code/chat):
+         FT_API_KEY, FT_API_SECRET, FT_USER_ID,
+         FT_PROXY_URL = your static-IP tunnel URL (REQUIRED on Render),
+         APP_BASE_URL = https://<your-render-app>.onrender.com,
+         APP_PASSCODE = a passcode you choose (gates the login page),
+         TURSO_URL, TURSO_TOKEN (reuse your CV Studio Turso database, or a new free one),
+         PYTHON_VERSION = 3.13.0  (required — the Turso library has no wheel for 3.14)
+   - Deploy. Open the app URL: you should see the status page with "Not logged in today".
+
+4. EVERY MORNING (market days) — order matters
+   - FIRST start your static-IP tunnel (the one FT_PROXY_URL points to).
+   - Open the app URL and tap "check egress IP" on the status page: the IP shown
+     must be your registered static IP. If it is not, do NOT log in — fix the
+     tunnel first, otherwise Flattrade sees a foreign IP.
+   - Then tap "Login with Flattrade", sign in on Flattrade's own page.
+   - You land back on the status page: "Logged in today" + the first OI snapshot appears.
+   - Keep the tunnel running all session — every chain poll uses it too.
+
+5. FIRST-TEST CHECKLIST
+   - After login, the NIFTY block must show spot, expiry, resistance, support, PCR.
+   - If anything fails, the status page shows Flattrade's exact reply in a red box.
+     Copy that text and send it to Muse — the fix will be in flattrade.py only.
+   - WHY THE TUNNEL: in September, Flattrade silently dropped connections from a
+     cloud worker because the traffic did not come from the registered static IP.
+     The v1.1 tunnel routing is the fix — Flattrade sees the registered IP for the
+     login exchange and for every poll. Fallback if the tunnel path still fails:
+     the SAME app runs on your Mac unchanged (no FT_PROXY_URL needed there).
+
+NOTES
+   - Render free sleeps when idle. During market hours the supervisor reads
+     /api/oi every scan, and every read refreshes stale data on demand, so the
+     sleep does not starve the data.
+   - SENSEX is attempted on the BSE F&O master; if Flattrade returns no chain,
+     the app keeps serving NIFTY and shows the Sensex error on the status page.
+   - Token + snapshots live in Turso, so a Render restart does not lose the day.
